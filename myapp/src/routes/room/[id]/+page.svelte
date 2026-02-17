@@ -9,6 +9,15 @@
 	let token = '';
 	let role = '';
 
+	let lastSent = 0;
+	type Cursor = {
+		x: number;
+		y: number;
+		role: 'admin' | 'member' | 'viewer';
+	};
+
+	let cursors: Record<string, Cursor> = {};
+
 	let nc: NatsConnection;
 
 	const sc = StringCodec();
@@ -37,6 +46,7 @@
 			const sub = nc.subscribe(`room.${roomId}.draw`);
 			const eraseSub = nc.subscribe(`room.${roomId}.erase`);
 			const clearSub = nc.subscribe(`room.${roomId}.clear`);
+			const cursorSub = nc.subscribe(`room.${roomId}.cursor`);
 
 			(async () => {
 				for await (const m of sub) {
@@ -64,6 +74,15 @@
 				for await (const m of clearSub) {
 					strokes = [];
 					drawAll();
+				}
+			})();
+
+			(async () => {
+				for await (const m of cursorSub) {
+					const data = JSON.parse(sc.decode(m.data));
+
+					if (data.userID === userID) continue;
+					cursors[data.userId] = { x: data.x, y: data.y, role: data.role };
 				}
 			})();
 		})();
@@ -292,34 +311,101 @@
 			}
 		});
 	}
+
+	function handleMouseMove(e: MouseEvent) {
+		const now = Date.now();
+		if (now - lastSent < 10) return;
+
+		lastSent = now;
+
+		const rect = canvas.getBoundingClientRect();
+		const x = e.clientX - rect.left;
+		const y = e.clientY - rect.top;
+
+		nc.publish(
+			`room.${roomId}.cursor`,
+			sc.encode(
+				JSON.stringify({
+					userID,
+					role,
+					x,
+					y
+				})
+			)
+		);
+	}
 </script>
 
 <div class={role == 'viewer' ? 'toolbar-off' : 'toolbar'}>
 	<button on:click={() => (tool = 'pen')} disabled={role == 'viewer'}>Pen</button>
 	<button on:click={() => (tool = 'eraser')} disabled={role == 'viewer'}>Eraser</button>
+
 	{#if role === 'admin'}
 		<button on:click={clearCanvas}>Clear Canvas</button>
 	{/if}
 </div>
 
-<canvas
-	bind:this={canvas}
-	width={WIDTH}
-	height={HEIGHT}
-	on:mousedown={startDraw}
-	on:mousemove={drawMove}
-	on:mouseup={endDraw}
-	on:mouseleave={endDraw}
-></canvas>
+<!-- canvas wrapper -->
+<div class="canvas-wrapper">
+	<canvas
+		bind:this={canvas}
+		width={WIDTH}
+		height={HEIGHT}
+		on:mousedown={startDraw}
+		on:mousemove={(e) => {
+			drawMove(e);
+			handleMouseMove(e);
+		}}
+		on:mouseup={endDraw}
+		on:mouseleave={endDraw}
+	></canvas>
+
+	<!-- cursor overlay -->
+	<div class="cursor-layer">
+		{#each Object.entries(cursors) as [id, c]}
+			<div class="cursor" style="left:{c.x}px; top:{c.y}px">
+				{c.role}
+			</div>
+		{/each}
+	</div>
+</div>
 
 <style>
+	.canvas-wrapper {
+		position: relative;
+		width: 2000px;
+		height: 1500px;
+	}
+
+	.cursor-layer {
+		position: absolute;
+		top: 0;
+		left: 0;
+		width: 2000px;
+		height: 1500px;
+		pointer-events: none;
+	}
+
+	.cursor {
+		position: absolute;
+		background: red;
+		color: white;
+		font-size: 10px;
+		padding: 2px 4px;
+		border-radius: 4px;
+		transform: translate(-50%, -50%);
+		white-space: nowrap;
+	}
+
 	canvas {
 		border: 1px solid #b61111;
 		background: white;
 	}
+
 	.toolbar {
 		margin: 10px;
 	}
+
 	.toolbar-off {
 		margin: 10px;
 		opacity: 0.5;
