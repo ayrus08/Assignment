@@ -1,5 +1,7 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
+	import { loginController } from '$lib/presentation/controllers/loginController';
+
 	let email = '';
 	let password = '';
 	let error = '';
@@ -10,29 +12,10 @@
 		loading = true;
 
 		try {
-			const res = await fetch('http://localhost:3001/api/login', {
-				method: 'POST',
-				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ email, password })
-			});
-
-			const data = await res.json();
-
-			if (!res.ok) {
-				error = data.error || 'Login failed';
-				return;
-			}
-			console.log('data = ', data);
-			// store auth info
-			localStorage.setItem('token', data.token);
-			localStorage.setItem('role', data.role);
-			localStorage.setItem('email', data.email);
-			localStorage.setItem('userId', data.userId);
-
-			// redirect
+			await loginController(email, password);
 			goto('/room/demo');
-		} catch (e) {
-			error = 'Server error';
+		} catch (e: any) {
+			error = e.message || 'Login failed';
 		} finally {
 			loading = false;
 		}

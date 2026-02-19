@@ -30,7 +30,6 @@
 		{/if}
 	</div>
 </nav>
-
 <slot />
 
 <style>
